@@ -1,7 +1,7 @@
 {
   "name": "backend-ledger",
   "version": "1.0.0",
-  "description": "A secure, scalable REST API for a generic double-entry financial ledger and wallet management system.",
+  "description": "A robust, secure backend API for a digital banking and ledger system.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -9,7 +9,7 @@
     "start": "node server.js"
   },
   "keywords": [],
-  "author": "Your Name",
+  "author": "Subham Mohanty",
   "license": "ISC",
   "dependencies": {
     "bcryptjs": "^3.0.3",
