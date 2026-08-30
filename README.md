@@ -85,6 +85,7 @@ This API is built using a standard Model-View-Controller (MVC) architecture to e
 - **Password Cryptography**: Passwords are mathematically hashed and salted using `bcryptjs` prior to database persistence.
 - **Token Blacklisting**: Implementing a persistence-based token blacklist to immediately revoke compromised or expired JWTs on logout.
 - **Protected Routes**: Custom middleware interceptors validate JWT signatures and verify authorization levels before granting endpoint access.
+- **Idempotency Key check**: Automatically generates idempotency key and checks if the the transaction is completed or not
 
 ## License
 
