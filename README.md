@@ -23,6 +23,7 @@ This API is built using a standard Model-View-Controller (MVC) architecture to e
 - **Role-Based Access Control (RBAC)**: Distinguishes between standard clients and administrative system users for sensitive operations (e.g., initial fund injection).
 - **Stateless Authentication**: Session management via JSON Web Tokens (JWT) coupled with a token invalidation strategy.
 - **Asynchronous Event Handling**: Integrated transactional email service via SMTP.
+- **Idempotency Key Generation**: Backend automatically generates a IdempotencyKey upon a transaction and checks it.
 
 ## System Requirements
 
