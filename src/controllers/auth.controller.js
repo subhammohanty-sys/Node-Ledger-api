@@ -1,7 +1,7 @@
 const userModel = require("../models/user.model")
 const jwt = require("jsonwebtoken")
 const emailService = require("../services/email.service")
-const tokenBlacklistModel = require("../models/blacklist.model")
+const redisClient = require("../config/redis")
 
 /**
 * - user register controller
@@ -104,7 +104,7 @@ async function userLoginController(req, res) {
   */
 async function userLogoutController(req, res) {
     try {
-        const token = req.cookies.token || req.headers.authorization?.split(" ")[ 1 ]
+        const token = req.cookies.token || req.headers.authorization?.split(" ")[1]
 
         if (!token) {
             return res.status(200).json({
@@ -112,9 +112,17 @@ async function userLogoutController(req, res) {
             })
         }
 
-        await tokenBlacklistModel.create({
-            token: token
-        })
+
+        const decoded = jwt.decode(token);
+        if (decoded && decoded.exp) {
+            const currentTime = Math.floor(Date.now() / 1000);
+            const timeUntilExpiry = decoded.exp - currentTime;
+
+            if (timeUntilExpiry > 0) {
+
+                await redisClient.set(`blacklist:${token}`, "blacklisted", "EX", timeUntilExpiry);
+            }
+        }
 
         res.clearCookie("token")
 

@@ -5,20 +5,20 @@ const accountSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "user",
-        required: [ true, "Account must be associated with a user" ],
+        required: [true, "Account must be associated with a user"],
         index: true
     },
     status: {
         type: String,
         enum: {
-            values: [ "ACTIVE", "FROZEN", "CLOSED" ],
+            values: ["ACTIVE", "FROZEN", "CLOSED"],
             message: "Status can be either ACTIVE, FROZEN or CLOSED",
         },
         default: "ACTIVE"
     },
     currency: {
         type: String,
-        required: [ true, "Currency is required for creating an account" ],
+        required: [true, "Currency is required for creating an account"],
         default: "INR"
     }
 }, {
@@ -37,7 +37,7 @@ accountSchema.methods.getBalance = async function () {
                 totalDebit: {
                     $sum: {
                         $cond: [
-                            { $eq: [ "$type", "DEBIT" ] },
+                            { $eq: ["$type", "DEBIT"] },
                             "$amount",
                             0
                         ]
@@ -46,7 +46,7 @@ accountSchema.methods.getBalance = async function () {
                 totalCredit: {
                     $sum: {
                         $cond: [
-                            { $eq: [ "$type", "CREDIT" ] },
+                            { $eq: ["$type", "CREDIT"] },
                             "$amount",
                             0
                         ]
@@ -57,7 +57,7 @@ accountSchema.methods.getBalance = async function () {
         {
             $project: {
                 _id: 0,
-                balance: { $subtract: [ "$totalCredit", "$totalDebit" ] }
+                balance: { $subtract: ["$totalCredit", "$totalDebit"] }
             }
         }
     ])
@@ -66,7 +66,7 @@ accountSchema.methods.getBalance = async function () {
         return 0
     }
 
-    return balanceData[ 0 ].balance
+    return balanceData[0].balance
 
 }
 

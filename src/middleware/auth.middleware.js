@@ -1,6 +1,6 @@
 const userModel = require("../models/user.model")
 const jwt = require("jsonwebtoken")
-const tokenBlacklistModel = require("../models/blacklist.model")
+const redisClient = require("../config/redis")
 
 
 
@@ -14,7 +14,7 @@ async function authMiddleware(req, res, next) {
         })
     }
 
-    const isBlacklisted = await tokenBlacklistModel.findOne({ token })
+    const isBlacklisted = await redisClient.get(`blacklist:${token}`)
 
     if (isBlacklisted) {
         return res.status(401).json({
@@ -48,7 +48,7 @@ async function authSystemUserMiddleware(req, res, next) {
         })
     }
 
-    const isBlacklisted = await tokenBlacklistModel.findOne({ token })
+    const isBlacklisted = await redisClient.get(`blacklist:${token}`)
 
     if (isBlacklisted) {
         return res.status(401).json({
