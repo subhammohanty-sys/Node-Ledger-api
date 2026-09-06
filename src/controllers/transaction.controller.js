@@ -1,7 +1,7 @@
 const transactionModel = require("../models/transaction.model")
 const ledgerModel = require("../models/ledger.model")
 const accountModel = require("../models/account.model")
-const emailService = require("../services/email.service")
+const emailQueue = require("../queues/email.queue")
 const mongoose = require("mongoose")
 const IdempotencyKey = require("../models/idempotencyKey.model")
 
@@ -128,9 +128,21 @@ async function createTransaction(req, res) {
          * 6. Send email notification
          */
         try {
-            await emailService.sendTransactionEmail(req.user.email, req.user.name, amount, toAccount)
-        } catch (emailErr) {
-            console.error("Failed to send transaction email", emailErr)
+            await emailQueue.add('transaction', {
+                email: req.user.email,
+                name: req.user.name,
+                amount, toAccount
+            },
+                {
+                    attempts: 3,
+                    backoff: {
+                        type: 'fixed',
+                        delay: 5000
+                    }
+                }
+            )
+        } catch (queueErr) {
+            console.error("Failed to enqueue transaction email", queueErr)
         }
 
         const responseObj = {

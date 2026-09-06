@@ -1,6 +1,6 @@
 const userModel = require("../models/user.model")
 const jwt = require("jsonwebtoken")
-const emailService = require("../services/email.service")
+const emailQueue = require("../queues/email.queue")
 const redisClient = require("../config/redis")
 
 /**
@@ -40,9 +40,20 @@ async function userRegisterController(req, res) {
         })
 
         try {
-            await emailService.sendRegistrationEmail(user.email, user.name)
-        } catch (emailErr) {
-            console.error("Failed to send registration email:", emailErr.message)
+            await emailQueue.add('registration',
+                {
+                    email: user.email,
+                    name: user.name
+                },
+                {
+                    attempts: 3,
+                    backoff: {
+                        type: 'fixed',
+                        delay: 5000
+                    }
+                })
+        } catch (queueErr) {
+            console.error("Failed to enqueue registration email:", queueErr.message)
         }
     } catch (error) {
         return res.status(500).json({
