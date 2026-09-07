@@ -4,6 +4,7 @@ const accountModel = require("../models/account.model")
 const emailQueue = require("../queues/email.queue")
 const mongoose = require("mongoose")
 const IdempotencyKey = require("../models/idempotencyKey.model")
+const redisClient = require("../config/redis")
 
 
 /**
@@ -115,6 +116,9 @@ async function createTransaction(req, res) {
 
             await session.commitTransaction();
             session.endSession();
+
+            await redisClient.del(`balance:${fromAccount}`);
+            await redisClient.del(`balance:${toAccount}`);
         } catch (error) {
             await session.abortTransaction();
             session.endSession();
@@ -190,7 +194,6 @@ async function createInitialFundsTransaction(req, res) {
             user: req.user._id
         })
 
-        //will not happen unless human error but this is a fallback if the system account gets deleted somehow
         if (!fromUserAccount) {
             return res.status(400).json({
                 message: "System user account not found"
@@ -229,6 +232,9 @@ async function createInitialFundsTransaction(req, res) {
 
             await session.commitTransaction();
             session.endSession();
+
+            await redisClient.del(`balance:${fromUserAccount._id.toString()}`);
+            await redisClient.del(`balance:${toAccount}`);
 
             const responseObj = {
                 message: "Initial funds transaction completed successfully",

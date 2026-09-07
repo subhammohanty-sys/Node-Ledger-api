@@ -1,5 +1,6 @@
 const mongoose = require("mongoose")
 const ledgerModel = require("./ledger.model")
+const redisClient = require("../config/redis")
 
 const accountSchema = new mongoose.Schema({
     user: {
@@ -28,46 +29,50 @@ const accountSchema = new mongoose.Schema({
 accountSchema.index({ user: 1, status: 1 })
 
 accountSchema.methods.getBalance = async function () {
+    const cacheKey = `balance:${this._id}`;
 
-    const balanceData = await ledgerModel.aggregate([
-        { $match: { account: this._id } },
-        {
-            $group: {
-                _id: null,
-                totalDebit: {
-                    $sum: {
-                        $cond: [
-                            { $eq: ["$type", "DEBIT"] },
-                            "$amount",
-                            0
-                        ]
-                    }
-                },
-                totalCredit: {
-                    $sum: {
-                        $cond: [
-                            { $eq: ["$type", "CREDIT"] },
-                            "$amount",
-                            0
-                        ]
+    const cachedBalance = await redisClient.get(cacheKey);
+    if (cachedBalance !== null) {
+        return parseFloat(cachedBalance);
+    } else {
+        const balanceData = await ledgerModel.aggregate([
+            { $match: { account: this._id } },
+            {
+                $group: {
+                    _id: null,
+                    totalDebit: {
+                        $sum: {
+                            $cond: [
+                                { $eq: ["$type", "DEBIT"] },
+                                "$amount",
+                                0
+                            ]
+                        }
+                    },
+                    totalCredit: {
+                        $sum: {
+                            $cond: [
+                                { $eq: ["$type", "CREDIT"] },
+                                "$amount",
+                                0
+                            ]
+                        }
                     }
                 }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    balance: { $subtract: ["$totalCredit", "$totalDebit"] }
+                }
             }
-        },
-        {
-            $project: {
-                _id: 0,
-                balance: { $subtract: ["$totalCredit", "$totalDebit"] }
-            }
-        }
-    ])
-
-    if (balanceData.length === 0) {
-        return 0
+        ])
     }
 
-    return balanceData[0].balance
+    const calculatedBalance = balanceData.length === 0 ? 0 : balanceData[0].balance;
+    await redisClient.set(cacheKey, calculatedBalance, "EX", 1800);
 
+    return calculatedBalance;
 }
 
 
