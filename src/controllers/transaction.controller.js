@@ -5,6 +5,7 @@ const emailQueue = require("../queues/email.queue")
 const mongoose = require("mongoose")
 const IdempotencyKey = require("../models/idempotencyKey.model")
 const redisClient = require("../config/redis")
+const redlock = require("../config/redlock")
 
 
 /**
@@ -65,66 +66,75 @@ async function createTransaction(req, res) {
         }
 
         /**
-         * 4. Derive sender balance from ledger
+         * 4. Wrap Balance Check and DB Transaction in Redlock Distributed Lock
+         * We lock both accounts to prevent concurrency race conditions (overdrafts).
          */
-        const balance = await fromUserAccount.getBalance()
-
-        if (balance < amount) {
-            return res.status(400).json({
-                message: `Insufficient balance. Current balance is ${balance}. Requested amount is ${amount}`
-            })
-        }
-
-        /**
-         * 5. Create transaction
-         */
-        const session = await mongoose.startSession();
-        session.startTransaction()
-        let transaction;
+        const locks = [`lock:account:${fromAccount}`, `lock:account:${toAccount}`].sort();
 
         try {
-            transaction = (await transactionModel.create([{
-                fromAccount,
-                toAccount,
-                amount,
-                idempotencyKey,
-                status: "PENDING"
-            }], { session }))[0]
+            await redlock.using(locks, 5000, async (signal) => {
 
-            const debitLedgerEntry = await ledgerModel.create([{
-                account: fromAccount,
-                amount: amount,
-                transaction: transaction._id,
-                type: "DEBIT"
-            }], { session })
 
-            const creditLedgerEntry = await ledgerModel.create([{
-                account: toAccount,
-                amount: amount,
-                transaction: transaction._id,
-                type: "CREDIT"
-            }], { session })
+                const balance = await fromUserAccount.getBalance()
 
-            await transactionModel.findOneAndUpdate(
-                { _id: transaction._id },
-                { status: "COMPLETED" },
-                { session }
-            )
+                if (balance < amount) {
+                    throw new Error(`Insufficient balance. Current balance is ${balance}. Requested amount is ${amount}`)
+                }
 
-            transaction.status = "COMPLETED"
-            await transaction.save({ session })
+                const session = await mongoose.startSession();
+                session.startTransaction()
+                let transaction;
 
-            await session.commitTransaction();
-            session.endSession();
+                try {
+                    transaction = (await transactionModel.create([{
+                        fromAccount,
+                        toAccount,
+                        amount,
+                        idempotencyKey,
+                        status: "PENDING"
+                    }], { session }))[0]
 
-            await redisClient.del(`balance:${fromAccount}`);
-            await redisClient.del(`balance:${toAccount}`);
+                    const debitLedgerEntry = await ledgerModel.create([{
+                        account: fromAccount,
+                        amount: amount,
+                        transaction: transaction._id,
+                        type: "DEBIT"
+                    }], { session })
+
+                    const creditLedgerEntry = await ledgerModel.create([{
+                        account: toAccount,
+                        amount: amount,
+                        transaction: transaction._id,
+                        type: "CREDIT"
+                    }], { session })
+
+                    await transactionModel.findOneAndUpdate(
+                        { _id: transaction._id },
+                        { status: "COMPLETED" },
+                        { session }
+                    )
+
+                    transaction.status = "COMPLETED"
+                    await transaction.save({ session })
+
+                    await session.commitTransaction();
+                    session.endSession();
+
+                    await redisClient.del(`balance:${fromAccount}`);
+                    await redisClient.del(`balance:${toAccount}`);
+                } catch (error) {
+                    await session.abortTransaction();
+                    session.endSession();
+                    throw new Error("Transaction is pending due to an issue, please retry after some time: " + error.message)
+                }
+
+                // Make transaction available outside the redlock scope if needed
+                req.completedTransaction = transaction;
+
+            });
         } catch (error) {
-            await session.abortTransaction();
-            session.endSession();
             return res.status(400).json({
-                message: "Transaction is pending due to an issue, please retry after some time",
-                error: error.message
+                message: error.message || "Could not acquire lock to process transaction"
             })
         }
 
@@ -151,7 +161,7 @@ async function createTransaction(req, res) {
 
         const responseObj = {
             message: "Transaction completed successfully",
-            transaction: transaction
+            transaction: req.completedTransaction
         };
 
         if (idempotencyKey) {
