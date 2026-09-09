@@ -19,9 +19,9 @@ A highly scalable, secure, and performant REST API designed for processing and t
 
 This API utilizes an advanced, decoupled micro-architecture designed to prevent bottlenecks and ensure mathematically perfect state management.
 
-- **Double-Entry Ledger Engine**: Ensures completely accurate transaction logging. Every transfer strictly records both a DEBIT and a CREDIT.
+- **Double Entry Ledger Engine**: Ensures completely accurate transaction logging. Every transfer strictly records both a DEBIT and a CREDIT.
 - **Background Event Queues (BullMQ)**: Transactional emails (via SMTP) are instantly offloaded to a background Redis queue with automatic retry mechanisms, reducing API latency from ~1000ms down to ~10ms.
-- **O(1) Account Balance Caching**: Heavily optimized `getBalance()` lookups utilizing a Read-Through Redis cache, bypassing expensive MongoDB `$aggregate` queries. The cache is instantly invalidated via event triggers upon successful transaction commits to guarantee zero stale data.
+- **Optimized Account Balance Caching**: Heavily optimized `getBalance()` lookups utilizing a Read-Through Redis cache, bypassing expensive MongoDB `$aggregate` queries. The cache is instantly invalidated via event triggers upon successful transaction commits to guarantee zero stale data.
 
 ## System Requirements
 
@@ -79,13 +79,13 @@ This API utilizes an advanced, decoupled micro-architecture designed to prevent 
 
 ## Security & Concurrency Implementations
 
-This API implements top-tier security and distributed systems principles to handle high-traffic environments:
+This API implements top-tier security and distributed systems principles to handle high traffic environments:
 
-- **Distributed Mutex Locking (Redlock)**: Utilizes the Redlock algorithm to wrap transaction boundaries in thread-safe locks, mathematically preventing race conditions and account overdrafts during highly concurrent API requests.
-- **Pessimistic Concurrency Control**: All financial writes (Ledger insertions and Transaction state updates) are wrapped strictly within MongoDB `session.startTransaction()`, guaranteeing Atomicity (all-or-nothing rollback on failure).
+- **Distributed Mutex Locking (Redlock)**: Utilizes the Redlock algorithm to wrap transaction boundaries in thread safe locks, mathematically preventing race conditions and account overdrafts during highly concurrent API requests.
+- **Pessimistic Concurrency Control**: All financial writes (Ledger insertions and Transaction state updates) are wrapped strictly within MongoDB `session.startTransaction()`, guaranteeing Atomicity (all or nothing rollback on failure).
 - **Idempotency Keys**: The API strictly enforces Idempotency Keys on all financial mutation endpoints. If a client disconnects and retries a POST request, the API detects the exact duplicate request and returns the cached response, completely eliminating double-spends.
-- **Token Bucket Rate Limiting (Redis)**: Endpoints are protected from DDoS and brute-force attacks via a high-performance Redis rate limiter using the Token Bucket algorithm.
-- **High-Performance Token Blacklisting**: JWT invalidation on logout is processed in milliseconds using Redis `EX` expiration flags, allowing RAM to automatically clean up expired tokens rather than bloating a database table.
+- **Token Bucket Rate Limiting (Redis)**: Endpoints are protected from DDoS and brute force attacks via a high performance Redis rate limiter using the Token Bucket algorithm.
+- **High Performance Token Blacklisting**: JWT invalidation on logout is processed in milliseconds using Redis `EX` expiration flags, allowing RAM to automatically clean up expired tokens rather than bloating a database table.
 - **Password Cryptography**: Passwords are mathematically hashed and salted using `bcryptjs`.
 
 ## License
