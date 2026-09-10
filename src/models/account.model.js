@@ -1,6 +1,7 @@
 const mongoose = require("mongoose")
 const ledgerModel = require("./ledger.model")
 const redisClient = require("../config/redis")
+const snapshotModel = require('./snapshot.model');
 
 const accountSchema = new mongoose.Schema({
     user: {
@@ -34,42 +35,55 @@ accountSchema.methods.getBalance = async function () {
     const cachedBalance = await redisClient.get(cacheKey);
     if (cachedBalance !== null) {
         return parseFloat(cachedBalance);
-    } else {
-        const balanceData = await ledgerModel.aggregate([
-            { $match: { account: this._id } },
-            {
-                $group: {
-                    _id: null,
-                    totalDebit: {
-                        $sum: {
-                            $cond: [
-                                { $eq: ["$type", "DEBIT"] },
-                                "$amount",
-                                0
-                            ]
-                        }
-                    },
-                    totalCredit: {
-                        $sum: {
-                            $cond: [
-                                { $eq: ["$type", "CREDIT"] },
-                                "$amount",
-                                0
-                            ]
-                        }
-                    }
-                }
-            },
-            {
-                $project: {
-                    _id: 0,
-                    balance: { $subtract: ["$totalCredit", "$totalDebit"] }
-                }
-            }
-        ])
+    }
+    // Cache Miss: Use Snapshot Rollup Algorithm
+    const latestSnapshot = await snapshotModel.findOne({ account: this._id }).sort({ createdAt: -1 });
+
+    const matchQuery = { account: this._id };
+    let baseBalance = 0;
+
+    // If a snapshot exists, we only query ledger entries that happened AFTER the snapshot
+    if (latestSnapshot) {
+        matchQuery._id = { $gt: latestSnapshot.lastLedgerId };
+        baseBalance = latestSnapshot.balance;
     }
 
-    const calculatedBalance = balanceData.length === 0 ? 0 : balanceData[0].balance;
+    const balanceData = await ledgerModel.aggregate([
+        { $match: matchQuery },
+        {
+            $group: {
+                _id: null,
+                totalDebit: {
+                    $sum: {
+                        $cond: [
+                            { $eq: ["$type", "DEBIT"] },
+                            "$amount",
+                            0
+                        ]
+                    }
+                },
+                totalCredit: {
+                    $sum: {
+                        $cond: [
+                            { $eq: ["$type", "CREDIT"] },
+                            "$amount",
+                            0
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            $project: {
+                _id: 0,
+                balance: { $subtract: ["$totalCredit", "$totalDebit"] }
+            }
+        }
+    ]);
+
+    const newLedgerBalance = balanceData.length === 0 ? 0 : balanceData[0].balance;
+    const calculatedBalance = baseBalance + newLedgerBalance;
+
     await redisClient.set(cacheKey, calculatedBalance, "EX", 1800);
 
     return calculatedBalance;

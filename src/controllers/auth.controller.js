@@ -66,7 +66,7 @@ async function userRegisterController(req, res) {
 /**
  * - User Login Controller
  * - POST /api/auth/login
-  */
+*/
 
 async function userLoginController(req, res) {
     try {

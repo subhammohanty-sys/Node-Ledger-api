@@ -6,6 +6,7 @@ const mongoose = require("mongoose")
 const IdempotencyKey = require("../models/idempotencyKey.model")
 const redisClient = require("../config/redis")
 const redlock = require("../config/redlock")
+const snapshotQueue = require("../queues/snapshot.queue")
 
 
 /**
@@ -122,6 +123,10 @@ async function createTransaction(req, res) {
 
                     await redisClient.del(`balance:${fromAccount}`);
                     await redisClient.del(`balance:${toAccount}`);
+
+                    // Asynchronously  snapshot health checks
+                    await snapshotQueue.add('check', { accountId: fromAccount });
+                    await snapshotQueue.add('check', { accountId: toAccount });
                 } catch (error) {
                     await session.abortTransaction();
                     session.endSession();
@@ -245,6 +250,10 @@ async function createInitialFundsTransaction(req, res) {
 
             await redisClient.del(`balance:${fromUserAccount._id.toString()}`);
             await redisClient.del(`balance:${toAccount}`);
+
+            // Asynchronously snapshot health checks
+            await snapshotQueue.add('check', { accountId: fromUserAccount._id.toString() });
+            await snapshotQueue.add('check', { accountId: toAccount });
 
             const responseObj = {
                 message: "Initial funds transaction completed successfully",
