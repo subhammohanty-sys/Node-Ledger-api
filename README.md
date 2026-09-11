@@ -5,7 +5,7 @@
 [![MongoDB](https://img.shields.io/badge/MongoDB-4EA94B?style=for-the-badge&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
 [![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 
-A highly scalable, secure, and performant REST API designed for processing and tracking financial transactions using a double-entry ledger architecture. This system is heavily optimized for high concurrency, making it a robust foundation for e-commerce platforms, digital wallets, or enterprise fintech applications.
+A highly scalable, secure, and performant REST API designed for processing and tracking financial transactions using a double entry ledger architecture. This system is heavily optimized for high concurrency, making it a robust foundation for e-commerce platforms, digital wallets, or enterprise fintech applications.
 
 ## Table of Contents
 - [Architecture & Features](#architecture--features)
@@ -21,7 +21,8 @@ This API utilizes an advanced, decoupled micro-architecture designed to prevent 
 
 - **Double Entry Ledger Engine**: Ensures completely accurate transaction logging. Every transfer strictly records both a DEBIT and a CREDIT.
 - **Background Event Queues (BullMQ)**: Transactional emails (via SMTP) are instantly offloaded to a background Redis queue with automatic retry mechanisms, reducing API latency from ~1000ms down to ~10ms.
-- **Optimized Account Balance Caching**: Heavily optimized `getBalance()` lookups utilizing a Read-Through Redis cache, bypassing expensive MongoDB `$aggregate` queries. The cache is instantly invalidated via event triggers upon successful transaction commits to guarantee zero stale data.
+- **Double-Entry Rollups (Snapshots Queue)**: Heavily optimized `getBalance()` lookups using a Read Through Redis cache, backed by point in time database Snapshots. On cache miss, the system fetches a pre calculated snapshot and only aggregates new entries, guaranteeing `O(1)` performance regardless of ledger size. Background workers asynchronously calculate new snapshots every 100 transactions without blocking API threads.
+- **Daily Global Ledger Audit (CRON)**: An automated BullMQ repeatable job that runs every night at midnight to aggregate the entire database and mathematically prove that `Sum(Total Credits) === Sum(Total Debits)`, throwing a critical alert on any integrity failure.
 
 ## System Requirements
 
