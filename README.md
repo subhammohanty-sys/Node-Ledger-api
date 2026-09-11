@@ -21,7 +21,7 @@ This API utilizes an advanced, decoupled micro-architecture designed to prevent 
 
 - **Double Entry Ledger Engine**: Ensures completely accurate transaction logging. Every transfer strictly records both a DEBIT and a CREDIT.
 - **Background Event Queues (BullMQ)**: Transactional emails (via SMTP) are instantly offloaded to a background Redis queue with automatic retry mechanisms, reducing API latency from ~1000ms down to ~10ms.
-- **Double-Entry Rollups (Snapshots Queue)**: Heavily optimized `getBalance()` lookups using a Read Through Redis cache, backed by point in time database Snapshots. On cache miss, the system fetches a pre calculated snapshot and only aggregates new entries, guaranteeing `O(1)` performance regardless of ledger size. Background workers asynchronously calculate new snapshots every 100 transactions without blocking API threads.
+- **Double-Entry Rollups (Snapshots Queue)**: Heavily optimize `getBalance()` lookups using a Read Through Redis cache, backed by point in time database Snapshots. On cache miss, the system fetches a pre calculated snapshot and only aggregates new entries, increasing performance of fetching balance and other transaction related data . Background workers asynchronously to calculate new snapshots every 100 transactions to keep the snapshot queue updated without blocking API threads.
 - **Daily Global Ledger Audit (CRON)**: An automated BullMQ repeatable job that runs every night at midnight to aggregate the entire database and mathematically prove that `Sum(Total Credits) === Sum(Total Debits)`, throwing a critical alert on any integrity failure.
 
 ## System Requirements
