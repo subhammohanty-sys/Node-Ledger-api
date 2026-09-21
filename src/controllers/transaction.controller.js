@@ -8,27 +8,8 @@ const redisClient = require("../config/redis")
 const redlock = require("../config/redlock")
 const snapshotQueue = require("../queues/snapshot.queue")
 
-
-/**
- * - Create a new transaction
- * THE 10-STEP TRANSFER FLOW:
-     * 1. Validate request
-     * 2. Validate idempotency key
-     * 3. Check account status
-     * 4. Derive sender balance from ledger
-     * 5. Create transaction (PENDING)
-     * 6. Create DEBIT ledger entry
-     * 7. Create CREDIT ledger entry
-     * 8. Mark transaction COMPLETED
-     * 9. Commit MongoDB session
-     * 10. Send email notification
- */
-
 async function createTransaction(req, res) {
     try {
-        /**
-         * 1. Validate request
-         */
         const { fromAccount, toAccount, amount, idempotencyKey } = req.body
 
         if (!fromAccount || !toAccount || !amount || !idempotencyKey) {
@@ -51,31 +32,16 @@ async function createTransaction(req, res) {
             })
         }
 
-        /**
-         * 2. Validate idempotency key
-         * (Note: This is now handled automatically by the idempotency.middleware before this controller runs)
-         */
-
-
-        /**
-         * 3. Check account status
-         */
         if (fromUserAccount.status !== "ACTIVE" || toUserAccount.status !== "ACTIVE") {
             return res.status(400).json({
                 message: "Both fromAccount and toAccount must be ACTIVE to process transaction"
             })
         }
 
-        /**
-         * 4. Wrap Balance Check and DB Transaction in Redlock Distributed Lock
-         * We lock both accounts to prevent concurrency race conditions (overdrafts).
-         */
         const locks = [`lock:account:${fromAccount}`, `lock:account:${toAccount}`].sort();
 
         try {
             await redlock.using(locks, 5000, async (signal) => {
-
-
                 const balance = await fromUserAccount.getBalance()
 
                 if (balance < amount) {
@@ -124,7 +90,6 @@ async function createTransaction(req, res) {
                     await redisClient.del(`balance:${fromAccount}`);
                     await redisClient.del(`balance:${toAccount}`);
 
-                    // Asynchronously  snapshot health checks
                     await snapshotQueue.add('check', { accountId: fromAccount });
                     await snapshotQueue.add('check', { accountId: toAccount });
                 } catch (error) {
@@ -133,9 +98,7 @@ async function createTransaction(req, res) {
                     throw new Error("Transaction is pending due to an issue, please retry after some time: " + error.message)
                 }
 
-                // Make transaction available outside the redlock scope if needed
                 req.completedTransaction = transaction;
-
             });
         } catch (error) {
             return res.status(400).json({
@@ -143,9 +106,6 @@ async function createTransaction(req, res) {
             })
         }
 
-        /**
-         * 6. Send email notification
-         */
         try {
             await emailQueue.add('transaction', {
                 email: req.user.email,
@@ -251,7 +211,6 @@ async function createInitialFundsTransaction(req, res) {
             await redisClient.del(`balance:${fromUserAccount._id.toString()}`);
             await redisClient.del(`balance:${toAccount}`);
 
-            // Asynchronously snapshot health checks
             await snapshotQueue.add('check', { accountId: fromUserAccount._id.toString() });
             await snapshotQueue.add('check', { accountId: toAccount });
 
