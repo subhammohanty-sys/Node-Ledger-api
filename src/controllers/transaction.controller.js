@@ -8,6 +8,10 @@ const redisClient = require("../config/redis")
 const redlock = require("../config/redlock")
 const snapshotQueue = require("../queues/snapshot.queue")
 
+/**
+ * Executes a fund transfer between two accounts using double-entry bookkeeping,
+ * distributed locking to prevent overdrafts, and atomic database transactions.
+ */
 async function createTransaction(req, res) {
     try {
         const { fromAccount, toAccount, amount, idempotencyKey } = req.body
@@ -38,6 +42,7 @@ async function createTransaction(req, res) {
             })
         }
 
+        // Sort lock keys deterministically to avoid deadlocks in concurrent transfers
         const locks = [`lock:account:${fromAccount}`, `lock:account:${toAccount}`].sort();
 
         try {
@@ -48,6 +53,7 @@ async function createTransaction(req, res) {
                     throw new Error(`Insufficient balance. Current balance is ${balance}. Requested amount is ${amount}`)
                 }
 
+                // Atomic transaction: create pending transaction and double-entry ledger records
                 const session = await mongoose.startSession();
                 session.startTransaction()
                 let transaction;
@@ -87,9 +93,11 @@ async function createTransaction(req, res) {
                     await session.commitTransaction();
                     session.endSession();
 
+                    // Invalidate cached balances to force recalculation on next read
                     await redisClient.del(`balance:${fromAccount}`);
                     await redisClient.del(`balance:${toAccount}`);
 
+                    // Trigger async background snapshot and reconciliation check
                     await snapshotQueue.add('check', { accountId: fromAccount });
                     await snapshotQueue.add('check', { accountId: toAccount });
                 } catch (error) {
@@ -106,6 +114,7 @@ async function createTransaction(req, res) {
             })
         }
 
+        // Asynchronously enqueue customer email notification
         try {
             await emailQueue.add('transaction', {
                 email: req.user.email,
@@ -129,6 +138,7 @@ async function createTransaction(req, res) {
             transaction: req.completedTransaction
         };
 
+        // Cache completed response payload for idempotent retries
         if (idempotencyKey) {
             await IdempotencyKey.findOneAndUpdate(
                 { key: idempotencyKey },
@@ -145,6 +155,9 @@ async function createTransaction(req, res) {
     }
 }
 
+/**
+ * Credits initial funding to a newly created user account from the system account.
+ */
 async function createInitialFundsTransaction(req, res) {
     try {
         const { toAccount, amount, idempotencyKey } = req.body
@@ -175,6 +188,7 @@ async function createInitialFundsTransaction(req, res) {
             })
         }
 
+        // Atomic transaction: mint initial ledger entries
         const session = await mongoose.startSession();
         session.startTransaction();
         let transaction;
@@ -208,9 +222,11 @@ async function createInitialFundsTransaction(req, res) {
             await session.commitTransaction();
             session.endSession();
 
+            // Invalidate cached balances
             await redisClient.del(`balance:${fromUserAccount._id.toString()}`);
             await redisClient.del(`balance:${toAccount}`);
 
+            // Enqueue snapshot check
             await snapshotQueue.add('check', { accountId: fromUserAccount._id.toString() });
             await snapshotQueue.add('check', { accountId: toAccount });
 
@@ -219,6 +235,7 @@ async function createInitialFundsTransaction(req, res) {
                 transaction: transaction
             };
 
+            // Cache response for idempotent retries
             if (idempotencyKey) {
                 await IdempotencyKey.findOneAndUpdate(
                     { key: idempotencyKey },
